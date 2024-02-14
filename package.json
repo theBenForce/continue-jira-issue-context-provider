@@ -1,0 +1,20 @@
+{
+  "name": "continue-jira-issue-context-provider",
+  "version": "1.0.0",
+  "description": "Add support for Jira tickets as context in Continue",
+  "main": "dist/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@types/node": "^20.11.17",
+    "adf-to-md": "^1.1.0",
+    "axios": "^1.6.7"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
+}
