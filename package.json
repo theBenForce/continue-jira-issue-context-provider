@@ -3,12 +3,13 @@
   "version": "1.0.0",
   "description": "Add support for Jira tickets as context in Continue",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc"
   },
-  "author": "",
-  "license": "ISC",
+  "author": "Ben Force <benforce@gmail.com>",
+  "license": "MIT",
   "dependencies": {
     "@types/node": "^20.11.17",
     "adf-to-md": "^1.1.0",
