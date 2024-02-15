@@ -35,10 +35,14 @@ interface Options {
   email: string;
   token: string;
   issueQuery?: string;
+  title?: string;
+  display?: string;
 }
 
 interface JiraComment {
   id: string;
+  created: string;
+  updated: string;
   author: {
     emailAddress: string;
     displayName: string;
@@ -64,8 +68,8 @@ interface QueryResults {
 }
 
 const JiraContexProvider = (options: Options): CustomContextProvider => ({
-  title: "jira",
-  displayTitle: "Jira",
+  title: options.title ?? "jira",
+  displayTitle: options.display ?? "Jira",
   description: "Retrieve ticket information from Jira",
   type: "submenu",
   loadSubmenuItems: async (
@@ -109,20 +113,27 @@ const JiraContexProvider = (options: Options): CustomContextProvider => ({
       })
       .then((result) => result.data);
 
-    let content = `# Jira Issue ${issue.key}\n\n${issue.fields.summary}`;
-
-    const description = issue.fields.description
-      ? adf2md.convert(issue.fields.description)
-      : "No description";
-
     const parts = [
-      description.result,
-      ...issue.fields.comment.comments.map(
-        (comment) => adf2md.convert(comment.body).result
-      ),
+      `# Jira Issue ${issue.key}: ${issue.fields.summary}`,
+      "## Description",
+      issue.fields.description
+        ? adf2md.convert(issue.fields.description).result
+        : "No description",
     ];
 
-    content += "\n\n" + parts.join("\n\n---\n\n");
+    if (issue.fields.comment.comments.length > 0) {
+      parts.push("## Comments");
+
+      parts.push(
+        ...issue.fields.comment.comments.map((comment) => {
+          const commentText = adf2md.convert(comment.body).result;
+
+          return `### ${comment.author.displayName} on ${comment.created}\n\n${commentText}`;
+        })
+      );
+    }
+
+    const content = parts.join("\n\n");
 
     return [
       {
