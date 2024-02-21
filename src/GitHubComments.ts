@@ -75,6 +75,7 @@ const getRemoteBranchName = async (
 };
 
 interface GitLabComment {
+  type: null | "DiffNote";
   resolvable: boolean;
   resolved?: boolean;
   body: string;
@@ -88,6 +89,24 @@ interface GitLabComment {
     avatar_url: string;
     web_url: string;
   };
+  position?: {
+    new_path: string;
+    new_line: number;
+    line_range: {
+      start: {
+        line_code: string;
+        type: "new";
+        old_line: null;
+        new_line: number;
+      };
+      end: {
+        line_code: string;
+        type: "new";
+        old_line: null;
+        new_line: number;
+      };
+    };
+  };
 }
 
 const GitLabCommentProvider = (options: Options): CustomContextProvider => ({
@@ -98,6 +117,8 @@ const GitLabCommentProvider = (options: Options): CustomContextProvider => ({
     issueId: string,
     extras: ContextProviderExtras
   ): Promise<ContextItem[]> => {
+    const parts = [`# GitLab Merge Request Comments`];
+
     const workingDir = await extras.ide
       .getWorkspaceDirs()
       .then((results) => results[0]);
@@ -108,6 +129,8 @@ const GitLabCommentProvider = (options: Options): CustomContextProvider => ({
         .then(trimStdoutResponse);
 
     const { branch, project } = await getRemoteBranchName(subprocess);
+
+    parts.push(`Branch: ${branch}\nProject: ${project}`);
 
     // @ts-ignore
     const api = createGitHubApi(options);
@@ -125,31 +148,75 @@ const GitLabCommentProvider = (options: Options): CustomContextProvider => ({
       .then((x) => x.data)
       .catch((err) => err.response?.data);
 
-    if (!mergeRequests?.length) {
-      return [];
-    }
+    if (mergeRequests?.length) {
+      const mergeRequest = mergeRequests[0];
 
-    const mergeRequest = mergeRequests[0];
+      parts.push(`Merge Request: ${mergeRequest.iid}`);
 
-    const comments = await api.get<Array<GitLabComment>>(
-      `/v4/projects/${mergeRequest.project_id}/merge_requests/${mergeRequest.iid}/notes`,
-      {
-        params: {
-          sort: "asc",
-          order_by: "updated_at",
-        },
+      const comments = await api.get<Array<GitLabComment>>(
+        `/v4/projects/${mergeRequest.project_id}/merge_requests/${mergeRequest.iid}/notes`,
+        {
+          params: {
+            sort: "asc",
+            order_by: "created_at",
+          },
+        }
+      );
+
+      const locations = {} as Record<string, Array<GitLabComment>>;
+
+      for (const comment of comments.data.filter(
+        (x) => x.type === "DiffNote"
+      )) {
+        const key = comment.position
+          ? `${comment.position.new_path}:${comment.position.new_line}`
+          : "general";
+
+        if (!locations[key]) {
+          locations[key] = [];
+        }
+
+        locations[key].push(comment);
       }
-    );
 
-    const parts = [
-      `# GitLab Merge Request Comments`,
-      ...comments.data
-        .filter((x) => x.resolvable /* && !x.resolved */)
-        .map(
-          (comment) =>
-            `## ${comment.author.name} on ${comment.created_at}\n\n${comment.body}`
-        ),
-    ];
+      for (const location of Object.keys(locations)) {
+        const locationComments = locations[location];
+
+        if (location !== "general") {
+          const firstComment = locationComments[0];
+          parts.push(
+            `## File ${firstComment.position!.new_path} at line ${
+              firstComment.position!.new_line
+            }`
+          );
+
+          const fileContent = await extras.ide.readFile(
+            firstComment.position!.new_path
+          );
+
+          const fileLines = fileContent
+            .split("\n")
+            .slice(
+              firstComment.position!.line_range.start.new_line,
+              firstComment.position!.line_range.end.new_line + 1
+            );
+
+          parts.push(`### Code`, `\`\`\`\n${fileLines.join("\n")}\n\`\`\``);
+        } else {
+          parts.push("## General");
+        }
+
+        parts.push(
+          `### Comments`,
+          ...locationComments.map(
+            (comment) =>
+              `#### ${comment.author.name} on ${comment.created_at}${
+                comment.resolved ? " (Resolved)" : ""
+              }\n\n${comment.body}`
+          )
+        );
+      }
+    }
 
     const content = parts.join("\n\n");
 
@@ -157,7 +224,7 @@ const GitLabCommentProvider = (options: Options): CustomContextProvider => ({
       {
         name: `GitLab MR Comments`,
         content,
-        description: `Unresolved comments from the Merge Request for this branch.`,
+        description: `Comments from the Merge Request for this branch.`,
       },
     ];
   },
