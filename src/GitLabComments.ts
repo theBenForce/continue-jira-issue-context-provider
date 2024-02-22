@@ -92,6 +92,7 @@ interface GitLabComment {
   position?: {
     new_path: string;
     new_line: number;
+    head_sha: string;
     line_range: {
       start: {
         line_code: string;
@@ -168,53 +169,44 @@ const GitLabCommentProvider = (options: Options): CustomContextProvider => ({
       for (const comment of comments.data.filter(
         (x) => x.type === "DiffNote"
       )) {
-        const key = comment.position
-          ? `${comment.position.new_path}:${comment.position.new_line}`
-          : "general";
+        const filename = comment.position?.new_path ?? "general";
 
-        if (!locations[key]) {
-          locations[key] = [];
+        if (!locations[filename]) {
+          locations[filename] = [];
         }
 
-        locations[key].push(comment);
+        locations[filename].push(comment);
       }
 
-      for (const location of Object.keys(locations)) {
-        const locationComments = locations[location];
+      const commentFormatter = (comment: GitLabComment) => {
+        const commentParts = [
+          `### ${comment.author.name} on ${comment.created_at}${
+            comment.resolved ? " (Resolved)" : ""
+          }`,
+        ];
 
-        if (location !== "general") {
-          const firstComment = locationComments[0];
-          parts.push(
-            `## File ${firstComment.position!.new_path} at line ${
-              firstComment.position!.new_line
-            }`
+        if (comment.position?.new_line) {
+          commentParts.push(
+            `line: ${comment.position.new_line}\ncommit: ${comment.position.head_sha}`
           );
-
-          const fileContent = await extras.ide.readFile(
-            firstComment.position!.new_path
-          );
-
-          const fileLines = fileContent
-            .split("\n")
-            .slice(
-              firstComment.position!.line_range.start.new_line,
-              firstComment.position!.line_range.end.new_line + 1
-            );
-
-          parts.push(`### Code`, `\`\`\`\n${fileLines.join("\n")}\n\`\`\``);
-        } else {
-          parts.push("## General");
         }
 
-        parts.push(
-          `### Comments`,
-          ...locationComments.map(
-            (comment) =>
-              `#### ${comment.author.name} on ${comment.created_at}${
-                comment.resolved ? " (Resolved)" : ""
-              }\n\n${comment.body}`
-          )
-        );
+        commentParts.push(comment.body);
+
+        return commentParts.join("\n\n");
+      };
+
+      for (const [filename, locationComments] of Object.entries(locations)) {
+        if (filename !== "general") {
+          parts.push(`## File ${filename}`);
+          locationComments.sort(
+            (a, b) => a.position!.new_line - b.position!.new_line
+          );
+        } else {
+          parts.push("## Comments");
+        }
+
+        parts.push(...locationComments.map(commentFormatter));
       }
     }
 
